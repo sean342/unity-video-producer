@@ -1,0 +1,62 @@
+name: Deploy to Cloudways
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy to Cloudways via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CLOUDWAYS_HOST }}
+          username: ${{ secrets.CLOUDWAYS_SSH_USER }}
+          key: ${{ secrets.CLOUDWAYS_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            APP_DIR="/var/www/unity-video-producer"
+            cd "$APP_DIR"
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Installing backend dependencies..."
+            cd backend
+            pip3 install -r requirements.txt
+            cd ..
+
+            echo "Restarting service..."
+            sudo systemctl restart unity-video-producer
+
+            echo "✓ Deployment complete"
+
+      - name: Upload frontend build to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.CLOUDWAYS_HOST }}
+          username: ${{ secrets.CLOUDWAYS_SSH_USER }}
+          key: ${{ secrets.CLOUDWAYS_SSH_KEY }}
+          port: 22
+          source: "frontend/dist/"
+          target: "/var/www/unity-video-producer/frontend/"
+          strip_components: 1
