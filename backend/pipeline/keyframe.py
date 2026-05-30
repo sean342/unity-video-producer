@@ -168,8 +168,10 @@ def _upload_to_cdn(local_path: Path) -> str:
     if result.returncode != 0:
         raise RuntimeError(f"Upload failed: {result.stderr}")
     # Extract URL from output (last line)
-    lines = result.stdout.strip().split("\n")
-    for line in reversed(lines):
-        if line.startswith("http"):
+    # Parse "CDN URL: https://..." format from manus-upload-file
+    for line in result.stdout.strip().split("\n"):
+        if "CDN URL:" in line:
+            return line.split("CDN URL:", 1)[1].strip()
+        if line.strip().startswith("http"):
             return line.strip()
     raise RuntimeError(f"Could not parse CDN URL from: {result.stdout}")
