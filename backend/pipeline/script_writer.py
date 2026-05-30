@@ -6,8 +6,6 @@ Lengths: 8s | 15s | 20s
 import os
 from openai import OpenAI
 
-client = OpenAI()  # uses OPENAI_API_KEY env var
-
 LENGTH_WORD_GUIDE = {
     "8s":  "25–35 words",
     "15s": "50–65 words",
@@ -50,6 +48,7 @@ Keep it conversational, energetic, and educational. No hashtags. No emojis.""",
 
 def generate_script(topic: str, format: str, length: str) -> str:
     """Generate a Unity video script using GPT-4.1-mini."""
+    client = OpenAI()  # lazy init so env vars are loaded first
     length_guide = LENGTH_WORD_GUIDE.get(length, "35–50 words")
     template = FORMAT_TEMPLATES.get(format, FORMAT_TEMPLATES["myth_or_fact"])
     prompt = template.format(topic=topic, length_guide=length_guide)
