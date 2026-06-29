@@ -592,6 +592,7 @@ class GraphicGenerateRequest(BaseModel):
     client_id: str = "unified"
     total_slides: int = 1       # for carousel: total number of slides
     slide_num: int = 1          # for carousel: which slide this is
+    uploaded_image_path: Optional[str] = None  # server path of user-uploaded photo
 
 class GraphicGenerateResponse(BaseModel):
     job_id: str
