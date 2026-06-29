@@ -515,7 +515,7 @@ export default function GraphicsForm({ onJobStarted, portedScene, onPortedSceneC
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Generating graphic...
+                {uploadedFile ? "Generating (2-pass)..." : "Generating graphic..."}
               </>
             ) : (
               <>
@@ -525,7 +525,7 @@ export default function GraphicsForm({ onJobStarted, portedScene, onPortedSceneC
             )}
           </button>
           <p className="text-xs text-gray-500 text-center">
-            Graphic generation takes approximately 30–60 seconds.
+            {uploadedFile ? "With photo: 2-pass generation takes approximately 90–120 seconds." : "Graphic generation takes approximately 30–60 seconds."}
           </p>
         </form>
 

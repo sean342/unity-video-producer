@@ -759,19 +759,68 @@ async def _run_graphic_pipeline(job_id: str, req: GraphicGenerateRequest,
         # Output path
         output_filename = f"graphic_{job_id[:8]}.png"
         output_path = GRAPHICS_DIR / output_filename
-        # Call GPT Image via images/edits with reference keyframes (same as video + social image pipeline)
         openai_api_key = os.environ.get("OPENAI_API_KEY", "")
         if not openai_api_key:
             raise Exception("OPENAI_API_KEY not configured")
-        files = []
-        # If user uploaded a photo, include it as the FIRST reference (highest weight)
-        # and use only 3 keyframe refs to stay within the 4-image limit
+
+        # ── OPTION B: Two-pass generation when user uploaded a photo ─────────
+        stylized_bg_path = None
         if uploaded_image_path and Path(uploaded_image_path).exists():
+            update_graphic_job("running", "Pass 1 — Converting photo to 3D animated scene...", 30)
+            logger.info(f"[graphics] Pass 1: stylizing uploaded photo for job {job_id}")
             up = Path(uploaded_image_path)
             mime = "image/jpeg" if up.suffix.lower() in (".jpg", ".jpeg") else "image/png"
-            files.append(("image[]", (up.name, open(up, "rb"), mime)))
+            bg_prompt = (
+                "Convert this photo into a clean, smooth Pixar-style 3D animated background scene. "
+                "Keep the exact same room layout, furniture arrangement, and spatial depth. "
+                "Match the lighting direction and color temperature of the original photo. "
+                "Render everything in warm, soft 3D animation style — same quality as Pixar or Disney films. "
+                "Do NOT add any characters, people, animals, or text. "
+                "The scene should be empty and ready for a 3D animated character to be placed in it. "
+                "Preserve the perspective and camera angle of the original photo exactly."
+            )
+            pass1_files = [("image[]", (up.name, open(up, "rb"), mime))]
+            try:
+                pass1_resp = http_requests.post(
+                    "https://api.openai.com/v1/images/edits",
+                    headers={"Authorization": f"Bearer {openai_api_key}"},
+                    data={"model": "gpt-image-1", "prompt": bg_prompt, "n": "1", "size": gpt_size},
+                    files=pass1_files,
+                    timeout=120,
+                )
+            finally:
+                for _, (_, fh, _) in pass1_files:
+                    fh.close()
+            if pass1_resp.status_code not in (200, 201):
+                logger.warning(f"[graphics] Pass 1 failed ({pass1_resp.status_code}), falling back to single-pass")
+            else:
+                p1_item = pass1_resp.json()["data"][0]
+                if "b64_json" in p1_item and p1_item["b64_json"]:
+                    p1_bytes = base64.b64decode(p1_item["b64_json"])
+                elif "url" in p1_item and p1_item["url"]:
+                    p1_bytes = http_requests.get(p1_item["url"], timeout=60).content
+                else:
+                    p1_bytes = None
+                if p1_bytes:
+                    stylized_bg_path = Path(uploaded_image_path).parent / f"stylized_{job_id[:8]}.png"
+                    stylized_bg_path.write_bytes(p1_bytes)
+                    logger.info(f"[graphics] Pass 1 complete: stylized bg saved to {stylized_bg_path}")
+        # ─────────────────────────────────────────────────────────────────────
+
+        update_graphic_job("running", "Pass 2 — Placing Unity in the scene..." if stylized_bg_path else "Generating graphic with GPT Image...", 55)
+        logger.info(f"[graphics] Pass 2: generating Unity graphic for job {job_id}")
+
+        files = []
+        if stylized_bg_path and stylized_bg_path.exists():
+            # Pass 2: stylized background first (sets the scene), then Unity keyframe refs
+            files.append(("image[]", (stylized_bg_path.name, open(stylized_bg_path, "rb"), "image/png")))
             keyframe_limit = 3
-            logger.info(f"[graphics] Including user photo as ref: {up.name}")
+            # Enhance prompt to place Unity naturally in the stylized scene
+            prompt += (
+                " The first reference image is a stylized 3D animated version of the customer's actual room/project. "
+                "Place Unity naturally inside that exact scene — matching the lighting, perspective, and depth of the room. "
+                "Unity should appear to be physically standing in that space, not pasted on top of it."
+            )
         else:
             keyframe_limit = 4
         for rp in ref_files[:keyframe_limit]:
