@@ -1,0 +1,32 @@
+{
+  "unified": {
+    "client_id": "unified",
+    "brand_name": "Unified Home Remodeling",
+    "mascot_name": "Unity",
+    "mascot_description": "Unity the golden retriever mascot. Golden yellow fur, red triangular bandana with a small house icon, brown leather tool belt with wrench and hammer, floppy ears, fluffy tail, friendly smile.",
+    "industry": "home remodeling",
+    "voice_id": "RlSomJYBsxja4xRQuPgO",
+    "voice_settings": {
+      "stability": 0.55,
+      "similarity_boost": 0.85,
+      "style": 0.30,
+      "use_speaker_boost": true
+    },
+    "assets": {
+      "logo": "assets/templates/unified_logo.png",
+      "bgm": "assets/templates/bgm.mp3",
+      "keyframes_dir": "assets/keyframes",
+      "references_dir": "assets/references",
+      "comedy_laugh": "assets/audio/comedy_laugh.mp3",
+      "comedy_applause": "assets/audio/comedy_applause.mp3"
+    },
+    "social": {
+      "ayrshare_profile_key": null,
+      "facebook_page_id": null,
+      "instagram_account_id": null,
+      "tiktok_account_id": null
+    },
+    "script_persona": "You are writing scripts for Unity, a friendly golden retriever mascot for Unified Home Remodeling. Unity is upbeat, knowledgeable, and approachable. Scripts should be conversational, warm, and educational. Always reference home improvement topics relevant to homeowners.",
+    "active": true
+  }
+}

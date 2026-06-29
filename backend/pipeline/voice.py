@@ -1,6 +1,6 @@
 """
-Voice generation — ElevenLabs Unity v2 voice with word timestamps.
-Voice ID: RlSomJYBsxja4xRQuPgO (Unity v2)
+Voice generation — ElevenLabs with per-client voice ID and settings.
+Voice config is loaded from clients.json via client_config.
 """
 import os
 import json
@@ -9,30 +9,28 @@ import requests
 from pathlib import Path
 from typing import Tuple, Dict
 
+from .client_config import get_client
+
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
-VOICE_ID = "RlSomJYBsxja4xRQuPgO"  # Unity v2 — locked
-
-VOICE_SETTINGS = {
-    "stability": 0.45,
-    "similarity_boost": 0.78,
-    "style": 0.35,
-    "use_speaker_boost": True,
-}
 
 
-def generate_voice(script: str, job_dir: Path) -> Tuple[Path, Dict]:
+def generate_voice(script: str, job_dir: Path, client_id: str = "unified") -> Tuple[Path, Dict]:
     """
-    Generate Unity v2 voiceover with word-level timestamps.
+    Generate voiceover with word-level timestamps using client-specific voice.
     Returns (mp3_path, alignment_dict).
     """
     if not ELEVENLABS_API_KEY:
         raise RuntimeError("ELEVENLABS_API_KEY not set")
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/with-timestamps"
+    client = get_client(client_id)
+    voice_id = client["voice_id"]
+    voice_settings = client["voice_settings"]
+
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
     payload = {
         "text": script,
         "model_id": "eleven_turbo_v2_5",
-        "voice_settings": VOICE_SETTINGS,
+        "voice_settings": voice_settings,
     }
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,

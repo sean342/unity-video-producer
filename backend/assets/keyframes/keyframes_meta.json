@@ -1,0 +1,57 @@
+{
+  "windows_alt1.png": {
+    "label": "Windows - Side Angle",
+    "tags": [
+      "windows",
+      "alt",
+      "side-angle",
+      "exterior"
+    ]
+  },
+  "windows_alt2.png": {
+    "label": "Windows - Low Angle",
+    "tags": [
+      "windows",
+      "alt",
+      "low-angle",
+      "exterior"
+    ]
+  },
+  "entry_doors_alt1.png": {
+    "label": "Entry Doors - Side Angle",
+    "tags": [
+      "doors",
+      "alt",
+      "side-angle",
+      "entry"
+    ]
+  },
+  "entry_doors_alt2.png": {
+    "label": "Entry Doors - Welcome Pose",
+    "tags": [
+      "doors",
+      "alt",
+      "welcome",
+      "entry"
+    ]
+  },
+  "rooftop_alt1.png": {
+    "label": "Rooftop - Inspector Pose",
+    "tags": [
+      "rooftop",
+      "alt",
+      "inspector",
+      "shingles"
+    ]
+  },
+  "rooftop_alt2.png": {
+    "label": "Rooftop - Back View Sunset",
+    "tags": [
+      "rooftop",
+      "alt",
+      "back-view",
+      "sunset",
+      "cinematic"
+    ]
+  }
+}
