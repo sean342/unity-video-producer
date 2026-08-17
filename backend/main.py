@@ -67,6 +67,20 @@ class GenerateResponse(BaseModel):
     message: str
 
 
+class ScriptPreviewRequest(BaseModel):
+    topic: str
+    format: str
+    length: str
+    client_id: str = "unified"
+
+
+class ScriptPreviewResponse(BaseModel):
+    script: str
+    topic: str
+    format: str
+    length: str
+
+
 class StatusResponse(BaseModel):
     job_id: str
     status: str
@@ -81,6 +95,35 @@ class StatusResponse(BaseModel):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "Unity Video Producer"}
+
+
+@app.post("/generate-script", response_model=ScriptPreviewResponse)
+async def generate_script_preview(req: ScriptPreviewRequest):
+    """Generate a reviewable script draft without creating a video job."""
+    topic = req.topic.strip()
+    if not topic:
+        raise HTTPException(status_code=422, detail="Topic is required")
+    try:
+        script = await asyncio.to_thread(
+            generate_script, topic, req.format, req.length, req.client_id
+        )
+    except Exception:
+        logger.exception("Script preview generation failed for topic=%r", topic)
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to generate a script draft. Please try again.",
+        )
+    if not script:
+        raise HTTPException(
+            status_code=502,
+            detail="The script generator returned an empty draft. Please try again.",
+        )
+    return ScriptPreviewResponse(
+        script=script,
+        topic=topic,
+        format=req.format,
+        length=req.length,
+    )
 
 
 @app.post("/generate", response_model=GenerateResponse)

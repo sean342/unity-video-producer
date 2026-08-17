@@ -66,9 +66,12 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
   // Keyframe library management
   const [deletingKf, setDeletingKf]     = useState<string | null>(null)
 
-  // Submission
+  // Submission and script approval
   const [loading, setLoading] = useState(false)
+  const [scriptLoading, setScriptLoading] = useState(false)
+  const [scriptDraft, setScriptDraft] = useState<string | null>(null)
   const [error, setError]     = useState('')
+  const inputsLocked = loading || scriptLoading || Boolean(scriptDraft)
 
   // ── Load keyframe library ──────────────────────────────────────────────────
   const loadKeyframes = async () => {
@@ -205,10 +208,38 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
     setDeletingKf(null)
   }
 
-  // ── Submit video generation ────────────────────────────────────────────────
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // ── Script preview, approval, and video generation ────────────────────────
+  const requestScriptDraft = async () => {
     if (!topic.trim()) { setError('Please enter a topic'); return }
+    setError('')
+    setScriptLoading(true)
+    try {
+      const r = await fetch(`${API_BASE}/generate-script`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          format,
+          length,
+          client_id: 'unified',
+        }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        throw new Error(err.detail || 'Script generation failed')
+      }
+      const data = await r.json()
+      if (!data.script?.trim()) throw new Error('The script generator returned an empty draft')
+      setScriptDraft(data.script.trim())
+    } catch (err: any) {
+      setError(err.message || 'Unable to generate a script draft. Please try again.')
+    } finally {
+      setScriptLoading(false)
+    }
+  }
+
+  const startVideoGeneration = async (script: string) => {
+    if (!script.trim()) { setError('The script cannot be empty'); return }
     setError('')
     setLoading(true)
     try {
@@ -219,12 +250,13 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
           topic: topic.trim(),
           format,
           length,
-          custom_script: showCustomScript && customScript.trim() ? customScript.trim() : null,
+          custom_script: script.trim(),
           keyframe_override: selectedKeyframe || null,
+          client_id: 'unified',
         }),
       })
       if (!r.ok) {
-        const err = await r.json()
+        const err = await r.json().catch(() => ({}))
         throw new Error(err.detail || 'Generation failed')
       }
       const data = await r.json()
@@ -234,6 +266,32 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!topic.trim()) { setError('Please enter a topic'); return }
+    if (showCustomScript && customScript.trim()) {
+      await startVideoGeneration(customScript)
+    } else {
+      await requestScriptDraft()
+    }
+  }
+
+  const handleApproveScript = async () => {
+    if (scriptDraft) await startVideoGeneration(scriptDraft)
+  }
+
+  const handleEditScript = () => {
+    if (!scriptDraft) return
+    setCustomScript(scriptDraft)
+    setShowCustomScript(true)
+    setScriptDraft(null)
+  }
+
+  const handleChangeInputs = () => {
+    setScriptDraft(null)
+    setError('')
   }
 
   // ── Selected keyframe display ──────────────────────────────────────────────
@@ -256,7 +314,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
             onChange={e => setTopic(e.target.value)}
             placeholder="e.g. double-pane windows, front doors, roof insulation"
             className="input-field"
-            disabled={loading}
+            disabled={inputsLocked}
           />
           <div className="flex flex-wrap gap-2 mt-2">
             {TOPIC_SUGGESTIONS.map(s => (
@@ -282,7 +340,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
                 key={opt.value}
                 type="button"
                 onClick={() => setFormat(opt.value)}
-                disabled={loading}
+                disabled={inputsLocked}
                 className={`flex flex-col items-center p-3 rounded-xl border-2 transition-all ${
                   format === opt.value
                     ? 'border-unified-red bg-unified-red/10 text-white'
@@ -305,7 +363,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
                 key={opt.value}
                 type="button"
                 onClick={() => setLength(opt.value)}
-                disabled={loading}
+                disabled={inputsLocked}
                 className={`flex flex-col items-center p-3 rounded-xl border-2 transition-all ${
                   length === opt.value
                     ? 'border-unified-gold bg-unified-gold/10 text-white'
@@ -525,7 +583,8 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
           <button
             type="button"
             onClick={() => setShowCustomScript(!showCustomScript)}
-            className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-2"
+            disabled={inputsLocked}
+            className="text-sm text-gray-400 hover:text-white disabled:opacity-50 transition-colors flex items-center gap-2"
           >
             <span className={`transition-transform ${showCustomScript ? 'rotate-90' : ''}`}>▶</span>
             {showCustomScript ? 'Hide custom script' : 'Use custom script instead of AI-generated'}
@@ -536,10 +595,44 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
               onChange={e => setCustomScript(e.target.value)}
               placeholder="Paste your script here. Unity will speak exactly these words."
               className="input-field mt-3 h-32 resize-none"
-              disabled={loading}
+              disabled={inputsLocked}
             />
           )}
         </div>
+
+        {/* AI script review */}
+        {scriptDraft && (
+          <div className="border border-unified-gold/40 bg-unified-gold/5 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-white">Review AI-generated script</h3>
+                <p className="text-xs text-gray-400 mt-1">No video has been created yet. Edit the draft if needed, then approve it to start production.</p>
+              </div>
+              <span className="text-xs font-medium text-unified-gold bg-unified-gold/10 px-2 py-1 rounded-full whitespace-nowrap">Approval required</span>
+            </div>
+            <textarea
+              value={scriptDraft}
+              onChange={e => setScriptDraft(e.target.value)}
+              className="input-field h-36 resize-y text-sm"
+              aria-label="AI-generated script draft"
+              disabled={loading}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <button type="button" onClick={handleApproveScript} disabled={loading || !scriptDraft.trim()} className="btn-primary text-sm py-2">
+                {loading ? 'Starting video...' : 'Approve & Generate Video'}
+              </button>
+              <button type="button" onClick={requestScriptDraft} disabled={loading || scriptLoading} className="btn-secondary text-sm py-2">
+                {scriptLoading ? 'Writing...' : 'Regenerate'}
+              </button>
+              <button type="button" onClick={handleEditScript} disabled={loading} className="btn-secondary text-sm py-2">
+                Edit as custom
+              </button>
+            </div>
+            <button type="button" onClick={handleChangeInputs} disabled={loading} className="text-xs text-gray-400 hover:text-white transition-colors">
+              Change topic, format, length, or keyframe
+            </button>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -548,27 +641,35 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
           </div>
         )}
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading || !topic.trim()}
-          className="btn-primary w-full flex items-center justify-center gap-3"
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Starting generation…
-            </>
-          ) : (
-            <><span>🎬</span> Generate Unity Video</>
-          )}
-        </button>
-        <p className="text-xs text-gray-500 text-center">
-          Generation takes approximately 4–6 minutes. You'll see live progress updates.
-        </p>
+        {/* Blank scripts require review before a video job exists */}
+        {!scriptDraft && (
+          <>
+            <button
+              type="submit"
+              disabled={loading || scriptLoading || !topic.trim()}
+              className="btn-primary w-full flex items-center justify-center gap-3"
+            >
+              {loading || scriptLoading ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  {scriptLoading ? 'Writing script...' : 'Starting video...'}
+                </>
+              ) : showCustomScript && customScript.trim() ? (
+                <><span>🎬</span> Generate Unity Video</>
+              ) : (
+                <><span>✨</span> Generate Script for Approval</>
+              )}
+            </button>
+            <p className="text-xs text-gray-500 text-center">
+              {showCustomScript && customScript.trim()
+                ? 'Generation takes approximately 4–6 minutes. You will see live progress updates.'
+                : 'An AI script draft will be shown for your review before any video generation begins.'}
+            </p>
+          </>
+        )}
       </form>
     </div>
   )
