@@ -1,29 +1,27 @@
 # Dependencies
 frontend/node_modules/
 frontend/dist/
-
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 backend/__pycache__/
 backend/pipeline/__pycache__/
-
 # Environment / secrets
 .env
 *.env
 backend/.env
-
 # Runtime assets (generated at runtime, not source code)
 backend/assets/keyframes/temp_*.png
 backend/assets/graphic_uploads/
 backend/assets/social_media/
 backend/outputs/
-
+# Encrypted credential database and local operational restore points
+backend/data/
+.manus-backups/
 # Logs
 *.log
 nohup.out
-
 # OS
 .DS_Store
 Thumbs.db

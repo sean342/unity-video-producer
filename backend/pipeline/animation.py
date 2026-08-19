@@ -113,7 +113,7 @@ def split_audio(audio_path: Path, job_dir: Path, max_duration: float = KLING_MAX
 def upload_to_cdn(local_path: Path, mime_type: str = "image/png") -> str:
     """Upload a file to fal.ai CDN and return a public URL."""
     import fal_client
-    fal_key = os.environ.get("FAL_KEY", FAL_KEY)
+    fal_key = get_credential("fal")
     client = fal_client.SyncClient(key=fal_key)
     url = client.upload_file(local_path)
     return url
@@ -178,7 +178,7 @@ def animate_chunk(
 ) -> Path:
     """Animate a single audio chunk with Kling. Returns path to downloaded chunk video."""
     import fal_client
-    fal_key = os.environ.get("FAL_KEY", FAL_KEY)
+    fal_key = get_credential("fal")
     os.environ["FAL_KEY"] = fal_key
     audio_url = upload_to_cdn(audio_chunk_path, "audio/mpeg")
     client = fal_client.SyncClient(key=fal_key)

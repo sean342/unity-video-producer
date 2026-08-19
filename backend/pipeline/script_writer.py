@@ -4,6 +4,7 @@ Brand/mascot references are loaded from clients.json via client_config.
 Formats: myth_or_fact | quick_tip | did_you_know | comedy | announcement | story
 Lengths: 8s | 15s | 20s
 """
+from credential_store import get_credential
 import os
 from openai import OpenAI
 from .client_config import get_client
@@ -82,7 +83,7 @@ def generate_script(topic: str, format: str, length: str, client_id: str = "unif
     industry = client_cfg.get("industry", "home improvement")
     persona = client_cfg.get("script_persona", f"You are a professional video scriptwriter for {brand}.")
 
-    openai_client = OpenAI()
+    openai_client = OpenAI(api_key=get_credential("openai"))
     length_guide = LENGTH_WORD_GUIDE.get(length, "35–50 words")
     template = FORMAT_TEMPLATES.get(format, FORMAT_TEMPLATES["myth_or_fact"])
     prompt = template.format(

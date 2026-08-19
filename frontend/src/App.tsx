@@ -4,6 +4,7 @@ import GraphicsForm from './components/GraphicsForm'
 import JobList from './components/JobList'
 import KeyframeLibrary from './components/KeyframeLibrary'
 import ImagesPage from './components/ImagesPage'
+import SettingsPage from './components/SettingsPage'
 
 const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD || 'unified2024'
 
@@ -25,7 +26,7 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
-  const [view, setView] = useState<'generate' | 'library' | 'images' | 'graphics' | 'history'>('generate')
+  const [view, setView] = useState<'generate' | 'library' | 'images' | 'graphics' | 'history' | 'settings'>('generate')
 
   // Pre-selected keyframe from Library → Generate
   const [selectedKeyframe, setSelectedKeyframe] = useState<{ filename: string; label: string } | null>(null)
@@ -144,6 +145,7 @@ export default function App() {
                 { id: 'images',   label: 'Images',   icon: '🐕' },
                 { id: 'graphics', label: 'Graphics', icon: '🎨' },
                 { id: 'history',  label: 'Video History',  icon: '📋' },
+                { id: 'settings', label: 'Settings', icon: '⚙️' },
               ] as const
             ).map(tab => (
               <button
@@ -339,6 +341,9 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* ── Settings ── */}
+        {view === 'settings' && <SettingsPage />}
 
         {/* ── History ── */}
         {view === 'history' && (

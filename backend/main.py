@@ -10,7 +10,7 @@ import base64
 import re
 from pathlib import Path
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -23,11 +23,13 @@ from pipeline.orchestrator import run_pipeline, JOB_STORE, JobStatus, update_job
 from pipeline.client_config import get_client, list_clients, reload_clients
 from pipeline.script_writer import generate_script
 from pipeline._keyframe_registry import set_registry
+from credential_store import credential_statuses, get_credential, initialize_store, store_credential
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Unity Video Producer", version="1.0.0")
+initialize_store()
 
 # CORS — allow frontend dev server and production
 app.add_middleware(
@@ -88,6 +90,75 @@ class StatusResponse(BaseModel):
     progress: Optional[int] = None  # 0–100
     error: Optional[str] = None
     video_url: Optional[str] = None
+
+
+class SettingsLoginRequest(BaseModel):
+    password: str
+
+
+class CredentialUpdateRequest(BaseModel):
+    api_key: str
+
+
+SETTINGS_SESSION_COOKIE = "uvp_settings_session"
+SETTINGS_SESSIONS: dict[str, float] = {}
+SETTINGS_SESSION_TTL_SECONDS = 8 * 60 * 60
+
+
+def _require_settings_session(request: Request) -> None:
+    import time
+    token = request.cookies.get(SETTINGS_SESSION_COOKIE, "")
+    expires_at = SETTINGS_SESSIONS.get(token, 0)
+    if not token or expires_at <= time.time():
+        if token:
+            SETTINGS_SESSIONS.pop(token, None)
+        raise HTTPException(status_code=401, detail="Settings session required")
+
+
+@app.post("/settings/session")
+def create_settings_session(req: SettingsLoginRequest, response: Response):
+    import hmac
+    import secrets
+    import time
+    configured_password = os.environ.get("APP_PASSWORD", "")
+    if not configured_password or not hmac.compare_digest(req.password, configured_password):
+        raise HTTPException(status_code=401, detail="Invalid team password")
+    token = secrets.token_urlsafe(32)
+    SETTINGS_SESSIONS[token] = time.time() + SETTINGS_SESSION_TTL_SECONDS
+    response.set_cookie(
+        key=SETTINGS_SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=SETTINGS_SESSION_TTL_SECONDS,
+        path="/",
+    )
+    return {"status": "ok"}
+
+
+@app.delete("/settings/session")
+def delete_settings_session(request: Request, response: Response):
+    token = request.cookies.get(SETTINGS_SESSION_COOKIE, "")
+    if token:
+        SETTINGS_SESSIONS.pop(token, None)
+    response.delete_cookie(SETTINGS_SESSION_COOKIE, path="/")
+    return {"status": "ok"}
+
+
+@app.get("/settings/credentials")
+def list_credential_settings(request: Request):
+    _require_settings_session(request)
+    return credential_statuses()
+
+
+@app.put("/settings/credentials/{provider}")
+def update_credential_setting(provider: str, req: CredentialUpdateRequest, request: Request):
+    _require_settings_session(request)
+    saved, message = store_credential(provider, req.api_key)
+    if not saved:
+        raise HTTPException(status_code=422, detail=message)
+    return {"status": "saved", "label": provider, "message": message}
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -343,7 +414,7 @@ async def prompt_magic(req: PromptMagicRequest):
     """Take a raw keyframe description and optimize it into a high-quality image generation prompt."""
     import os
     from openai import OpenAI
-    openai_client = OpenAI()
+    openai_client = OpenAI(api_key=get_credential("openai"))
     cfg = get_client(req.client_id)
     mascot_name = cfg.get("mascot_name", "Unity")
     mascot_desc = cfg.get("mascot_description", "a friendly golden retriever with a red bandana and tool belt")
@@ -526,7 +597,7 @@ async def generate_keyframe_endpoint(req: KeyframeGenerateRequest):
     """Generate a new Unity keyframe using GPT Image (gpt-image-1) with the 4 library
     reference keyframes — IDENTICAL pipeline to generate_new_keyframe (video build),
     generate-social-image, and the graphics module."""
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_api_key = get_credential("openai")
     if not openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
 
@@ -802,7 +873,7 @@ async def _run_graphic_pipeline(job_id: str, req: GraphicGenerateRequest,
         # Output path
         output_filename = f"graphic_{job_id[:8]}.png"
         output_path = GRAPHICS_DIR / output_filename
-        openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+        openai_api_key = get_credential("openai")
         if not openai_api_key:
             raise Exception("OPENAI_API_KEY not configured")
 
@@ -1121,7 +1192,7 @@ async def generate_social_image(req: SocialImageGenerateRequest):
         raise HTTPException(status_code=500, detail="No reference images found on server")
 
     # Use GPT Image (gpt-image-1) via images/edits with reference images for 3D Pixar-style consistency
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+    openai_api_key = get_credential("openai")
     if not openai_api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
 

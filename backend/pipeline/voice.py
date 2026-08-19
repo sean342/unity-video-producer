@@ -19,8 +19,9 @@ def generate_voice(script: str, job_dir: Path, client_id: str = "unified") -> Tu
     Generate voiceover with word-level timestamps using client-specific voice.
     Returns (mp3_path, alignment_dict).
     """
-    if not ELEVENLABS_API_KEY:
-        raise RuntimeError("ELEVENLABS_API_KEY not set")
+    elevenlabs_api_key = get_credential("elevenlabs")
+    if not elevenlabs_api_key:
+        raise RuntimeError("ElevenLabs API key not configured")
 
     client = get_client(client_id)
     voice_id = client["voice_id"]
@@ -33,7 +34,7 @@ def generate_voice(script: str, job_dir: Path, client_id: str = "unified") -> Tu
         "voice_settings": voice_settings,
     }
     headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
+        "xi-api-key": elevenlabs_api_key,
         "Content-Type": "application/json",
     }
 

@@ -16,7 +16,7 @@ KEYFRAMES_DIR = ASSETS_DIR / "keyframes"
 REFS_DIR = ASSETS_DIR / "references"
 EXTRACTED_DIR = REFS_DIR / "extracted"
 
-FAL_KEY = os.environ.get("FAL_KEY", "efc35cb5-2721-4551-927a-9e551b153bb2:da72a3ac272f43067486b6bd43d05929")
+from credential_store import get_credential
 
 # Keyframes used as GPT Image references — cannot be deleted
 REFERENCE_KEYFRAMES = {
@@ -180,7 +180,7 @@ Instructions:
 - Respond with ONLY the exact filename (e.g. windows.png). No explanation."""
 
     try:
-        client = OpenAI()
+        client = OpenAI(api_key=get_credential("openai"))
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -223,7 +223,7 @@ def select_keyframe_keyword(topic: str, video_format: str = "") -> Path | None:
 
 def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = "") -> Path:
     """Generate a new keyframe using gpt-image-1 edits with Unity reference images."""
-    api_key = os.environ.get("OPENAI_API_KEY")
+    api_key = get_credential("openai")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
 
@@ -294,7 +294,7 @@ def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = ""
 def upload_to_cdn(local_path: Path) -> str:
     """Upload a file to fal.ai CDN and return a public URL."""
     import fal_client
-    fal_key = os.environ.get("FAL_KEY", FAL_KEY)
+    fal_key = get_credential("fal")
     client = fal_client.SyncClient(key=fal_key)
     return client.upload_file(str(local_path))
 

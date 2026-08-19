@@ -8,6 +8,7 @@ Uses GPT-4.1-mini to:
 The annotated script is passed to ElevenLabs instead of the raw script.
 The cue points are passed to the assembler to mix in audience audio.
 """
+from credential_store import get_credential
 import json
 import logging
 from dataclasses import dataclass
@@ -36,7 +37,7 @@ def analyze_comedy_script(script: str) -> ComedyAnalysis:
     - An annotated version with pause markers for natural comedic delivery
     - Audience reaction cue points (laugh/applause) with timing estimates
     """
-    client = OpenAI()
+    client = OpenAI(api_key=get_credential("openai"))
 
     prompt = f"""You are a comedy timing director for a short video featuring Unity, a golden retriever mascot.
 
