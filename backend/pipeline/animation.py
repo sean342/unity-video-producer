@@ -13,6 +13,8 @@ import os
 import subprocess
 import requests
 from pathlib import Path
+from credential_store import get_credential
+
 
 FAL_KEY = os.environ.get("FAL_KEY", "")
 

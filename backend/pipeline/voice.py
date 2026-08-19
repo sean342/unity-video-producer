@@ -8,6 +8,8 @@ import base64
 import requests
 from pathlib import Path
 from typing import Tuple, Dict
+from credential_store import get_credential
+
 
 from .client_config import get_client
 
