@@ -37,6 +37,24 @@ def _get_logo_dimensions(logo_path: Path) -> tuple:
     return 200, 80
 
 
+def _get_media_duration_seconds(media_path: Path) -> float:
+    """Return media duration in seconds for deterministic body render bounds."""
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(media_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        return float(result.stdout.strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _brand_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     """Load a dependable system font for rendered end-screen typography."""
     names = (
@@ -212,6 +230,9 @@ def assemble_video(
     """Assemble the branded video body, then append the fixed five-second CTA end screen."""
     logo_src = get_asset_path(client_id, "logo")
     bgm_src = get_asset_path(client_id, "bgm")
+    body_duration = _get_media_duration_seconds(raw_video)
+    if body_duration <= 0:
+        raise RuntimeError(f"Could not determine raw video duration: {raw_video}")
     laugh_src = get_asset_path(client_id, "comedy_laugh")
     applause_src = get_asset_path(client_id, "comedy_applause")
 
@@ -293,6 +314,7 @@ def assemble_video(
             "-map", "[aout]",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "aac", "-b:a", "192k",
+            "-t", f"{body_duration:.3f}",
             "-shortest",
             "-movflags", "+faststart",
             str(body_video),
