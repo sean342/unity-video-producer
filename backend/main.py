@@ -1147,10 +1147,6 @@ def list_social_media_sizes():
 @app.post("/generate-social-image", response_model=SocialImageGenerateResponse)
 async def generate_social_image(req: SocialImageGenerateRequest):
     """Generate a clean Unity image (no text, no logo) at the requested aspect ratio."""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    if not gemini_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
-
     size = SOCIAL_SIZE_PRESETS.get(req.aspect_ratio, SOCIAL_SIZE_PRESETS["1:1"])
     w, h = size["width"], size["height"]
 

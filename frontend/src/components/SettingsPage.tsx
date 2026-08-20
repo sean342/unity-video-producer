@@ -14,7 +14,6 @@ const providerHelp: Record<string, string> = {
   openai: 'Used for scripts, Unity images, keyframes, and graphics.',
   elevenlabs: 'Used for Unity voiceover and timestamp alignment.',
   fal: 'Used for fal CDN uploads and Kling Avatar video generation.',
-  gemini: 'Legacy provider; retained for compatibility with older workflows.',
 }
 
 export default function SettingsPage() {

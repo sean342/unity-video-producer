@@ -19,7 +19,6 @@ PROVIDERS: Dict[str, Dict[str, str]] = {
     "openai": {"label": "OpenAI", "env": "OPENAI_API_KEY"},
     "elevenlabs": {"label": "ElevenLabs", "env": "ELEVENLABS_API_KEY"},
     "fal": {"label": "fal.ai / Kling", "env": "FAL_KEY"},
-    "gemini": {"label": "Google Gemini (legacy)", "env": "GEMINI_API_KEY"},
 }
 
 _lock = threading.RLock()
@@ -145,12 +144,6 @@ def validate_credential(provider: str, value: str) -> Tuple[bool, str]:
                     json={},
                     timeout=12,
                 )
-        elif provider == "gemini":
-            response = requests.get(
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                params={"key": value},
-                timeout=12,
-            )
         else:
             return False, "Unsupported provider."
     except requests.RequestException:
