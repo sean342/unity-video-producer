@@ -278,10 +278,10 @@ def assemble_video(
     if sfx_labels:
         weights = "1 0.10" + " 0.75" * len(sfx_labels)
         filter_parts.append(
-            f"[0:a][bgm]{''.join(sfx_labels)}amix=inputs={all_audio_count}:duration=longest:weights={weights}[aout]"
+            f"[0:a][bgm]{''.join(sfx_labels)}amix=inputs={all_audio_count}:duration=longest:weights={weights},apad[aout]"
         )
     else:
-        filter_parts.append("[0:a][bgm]amix=inputs=2:duration=first:weights=1 0.10[aout]")
+        filter_parts.append("[0:a][bgm]amix=inputs=2:duration=first:weights=1 0.10,apad[aout]")
 
     body_video = output_path.with_name(f"{output_path.stem}_body.mp4")
     body_command = (
@@ -293,6 +293,7 @@ def assemble_video(
             "-map", "[aout]",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "aac", "-b:a", "192k",
+            "-shortest",
             "-movflags", "+faststart",
             str(body_video),
         ]

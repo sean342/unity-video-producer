@@ -43,7 +43,7 @@ SCENE_ACTIONS = {
     "bath":       "in a remodeled bathroom, speaking to camera",
     "sunroom":    "in a bright sunroom, speaking to camera",
     "energy":     "in front of an energy-efficient house, speaking to camera",
-    "financing":  "holding a financing sign, speaking to camera",
+    "financing":  "standing beside a financing sign, speaking to camera with empty paws",
     "review":     "next to a 5-star review, speaking to camera",
     "teach":      "at a whiteboard, gesturing and speaking to camera",
     "comedy":     "at a comedy microphone, speaking to camera",
@@ -249,8 +249,9 @@ def generate_animation(
     action = get_action(topic)
     prompt = (
         f"{mascot_name} {action}. "
-        f"Natural body movement and gestures. "
+        f"Natural body movement and gestures using visibly empty paws. "
         f"{mascot_desc} "
+        f"Do not add, remove, or morph any props during the clip. No handheld screwdriver, hammer, wrench, sign, microphone, tool, or object. "
         f"Friendly energetic expression."
     )
 
