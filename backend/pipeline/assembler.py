@@ -159,8 +159,9 @@ def _append_branded_end_screen(body_video: Path, final_video: Path, client_id: s
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
         "-t", str(END_SCREEN_DURATION_SECONDS),
         "-vf", f"scale={VW}:{VH},format=yuv420p",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
+        "-r", "30",
+        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
         "-shortest", "-movflags", "+faststart",
         str(end_clip_path),
     ]
@@ -168,15 +169,18 @@ def _append_branded_end_screen(body_video: Path, final_video: Path, client_id: s
     if result.returncode != 0:
         raise RuntimeError(f"End-screen render failed:\n{result.stderr[-2000:]}")
 
+    # Both clips are normalized to the application's native 1072x1920, 30 fps,
+    # H.264/AAC format. The concat demuxer therefore joins them without a second,
+    # expensive full-video re-encode.
+    concat_list = job_dir / "end_screen_concat.txt"
+    concat_list.write_text(
+        f"file '{body_video.resolve()}'\\nfile '{end_clip_path.resolve()}'\\n",
+        encoding="utf-8",
+    )
     concat = [
-        "ffmpeg", "-y",
-        "-i", str(body_video),
-        "-i", str(end_clip_path),
-        "-filter_complex", "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[vout][aout]",
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat_list),
+        "-c", "copy", "-movflags", "+faststart",
         str(final_video),
     ]
     result = subprocess.run(concat, capture_output=True, text=True)
