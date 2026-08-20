@@ -10,6 +10,7 @@ import re
 import base64
 import requests
 from pathlib import Path
+from PIL import Image, ImageFilter, ImageOps
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 KEYFRAMES_DIR = ASSETS_DIR / "keyframes"
@@ -17,6 +18,7 @@ REFS_DIR = ASSETS_DIR / "references"
 EXTRACTED_DIR = REFS_DIR / "extracted"
 
 from credential_store import get_credential
+from .video_formats import get_video_format, normalized_output_ratio
 
 # Keyframes used as GPT Image references — cannot be deleted
 REFERENCE_KEYFRAMES = {
@@ -221,7 +223,27 @@ def select_keyframe_keyword(topic: str, video_format: str = "") -> Path | None:
     return default if default.exists() else None
 
 
-def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = "") -> Path:
+def _prepare_keyframe_canvas(source_path: Path, job_dir: Path, output_ratio: str) -> Path:
+    """Fit a library or generated keyframe onto the selected social-video canvas."""
+    ratio = normalized_output_ratio(output_ratio)
+    preset = get_video_format(ratio)
+    target = (int(preset["width"]), int(preset["height"]))
+    with Image.open(source_path).convert("RGB") as source:
+        if source.size == target:
+            return source_path
+        background = ImageOps.fit(source, target, Image.Resampling.LANCZOS)
+        background = background.filter(ImageFilter.GaussianBlur(radius=max(12, target[0] // 45)))
+        foreground = ImageOps.contain(source, (int(target[0] * 0.94), int(target[1] * 0.94)), Image.Resampling.LANCZOS)
+        canvas = background.copy()
+        x = (target[0] - foreground.width) // 2
+        y = (target[1] - foreground.height) // 2
+        canvas.paste(foreground, (x, y))
+        out_path = job_dir / f"keyframe_{ratio.replace(':', 'x')}.png"
+        canvas.save(out_path, format="PNG")
+    return out_path
+
+
+def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = "", output_ratio: str = "9:16") -> Path:
     """Generate a new keyframe using gpt-image-1 edits with Unity reference images."""
     api_key = get_credential("openai")
     if not api_key:
@@ -234,7 +256,9 @@ def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = ""
         f"Both front paws are visibly empty: no screwdriver, hammer, wrench, sign, tool, or any handheld object. "
         f"3/4 angle showing front AND side, fluffy golden tail clearly visible. "
         f"Friendly energetic expression, mouth slightly open. "
-        f"Soft warm rim lighting, professional branded video style. Full body head to paws."
+        f"Soft warm rim lighting, professional branded video style. Full body head to paws. "
+        f"Compose natively for a {get_video_format(normalized_output_ratio(output_ratio))['label']} social video frame; "
+        f"keep Unity fully visible with balanced safe margins."
     )
 
     # Use library reference keyframes as references — multiple images for stronger character lock
@@ -267,7 +291,7 @@ def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = ""
         response = requests.post(
             "https://api.openai.com/v1/images/edits",
             headers={"Authorization": f"Bearer {api_key}"},
-            data={"model": "gpt-image-1", "prompt": prompt, "n": "1", "size": "1024x1024"},
+            data={"model": "gpt-image-1", "prompt": prompt, "n": "1", "size": get_video_format(normalized_output_ratio(output_ratio))["gpt_size"]},
             files=files,
             timeout=120,
         )
@@ -288,7 +312,7 @@ def generate_new_keyframe(topic: str, job_dir: Path, scene_description: str = ""
 
     out_path = job_dir / "keyframe.png"
     out_path.write_bytes(img_bytes)
-    return out_path
+    return _prepare_keyframe_canvas(out_path, job_dir, output_ratio)
 
 
 def upload_to_cdn(local_path: Path) -> str:
@@ -299,7 +323,7 @@ def upload_to_cdn(local_path: Path) -> str:
     return client.upload_file(str(local_path))
 
 
-def generate_keyframe(topic: str, format: str, job_dir: Path, script: str = "", keyframe_override: str = "", client_id: str = "unified", keyframe_description: str = "") -> str:
+def generate_keyframe(topic: str, format: str, job_dir: Path, script: str = "", keyframe_override: str = "", client_id: str = "unified", keyframe_description: str = "", output_ratio: str = "9:16") -> str:
     """
     Main entry point: select from library or generate new keyframe.
     If keyframe_override is provided, uses that specific file directly.
@@ -314,14 +338,14 @@ def generate_keyframe(topic: str, format: str, job_dir: Path, script: str = "", 
         override_path = KEYFRAMES_DIR / keyframe_override
         if override_path.exists():
             print(f"[keyframe] Using user-selected keyframe: {keyframe_override}")
-            return upload_to_cdn(override_path)
+            return upload_to_cdn(_prepare_keyframe_canvas(override_path, job_dir, output_ratio))
         else:
             print(f"[keyframe] Override '{keyframe_override}' not found — falling back to auto-select")
 
     # If a custom scene description was provided, generate a new keyframe directly
     if keyframe_description:
         print(f"[keyframe] Generating on-the-fly keyframe: {keyframe_description}")
-        generated_path = generate_new_keyframe(topic, job_dir, scene_description=keyframe_description)
+        generated_path = generate_new_keyframe(topic, job_dir, scene_description=keyframe_description, output_ratio=output_ratio)
         # Auto-save to library with a derived filename and label
         safe_name = re.sub(r"[^a-z0-9_]", "_", topic.lower()).strip("_") + ".png"
         library_save = KEYFRAMES_DIR / safe_name
@@ -345,11 +369,11 @@ def generate_keyframe(topic: str, format: str, job_dir: Path, script: str = "", 
 
     if library_path and library_path.exists():
         print(f"[keyframe] Using library keyframe: {library_path.name}")
-        cdn_url = upload_to_cdn(library_path)
+        cdn_url = upload_to_cdn(_prepare_keyframe_canvas(library_path, job_dir, output_ratio))
     else:
         # Generate new keyframe — no library match found
         print(f"[keyframe] No library match for '{topic}', generating new keyframe...")
-        generated_path = generate_new_keyframe(topic, job_dir)
+        generated_path = generate_new_keyframe(topic, job_dir, output_ratio=output_ratio)
         # Auto-save to library for future reuse
         safe_name = re.sub(r"[^a-z0-9_]", "_", topic.lower()).strip("_") + ".png"
         library_save = KEYFRAMES_DIR / safe_name

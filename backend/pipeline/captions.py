@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Dict, List
 from PIL import Image, ImageDraw, ImageFont
 
+from .video_formats import get_video_format
+
 VW, VH = 1072, 1920
 WORDS_PER_LINE = 5
 PADDING_X = 36
@@ -88,13 +90,20 @@ def _get_font(size: int):
     return ImageFont.load_default()
 
 
-def render_captions(alignment: Dict, job_dir: Path) -> List[Dict]:
+def render_captions(alignment: Dict, job_dir: Path, output_ratio: str = "9:16") -> List[Dict]:
     """
     Render caption PNGs from ElevenLabs alignment data.
     Returns list of caption dicts with timing and file paths.
     """
     cap_dir = job_dir / "captions"
     cap_dir.mkdir(exist_ok=True)
+    preset = get_video_format(output_ratio)
+    vw, vh = int(preset["width"]), int(preset["height"])
+    scale = vw / VW
+    padding_x = max(18, round(PADDING_X * scale))
+    padding_y = max(12, round(PADDING_Y * scale))
+    radius = max(12, round(RADIUS * scale))
+    max_text_width = vw - max(60, round(80 * scale))
 
     chars = alignment.get("characters", [])
     starts = alignment.get("character_start_times_seconds", [])
@@ -139,36 +148,37 @@ def render_captions(alignment: Dict, job_dir: Path) -> List[Dict]:
         text = line["text"]
 
         # Auto-size font to fit within MAX_TEXT_WIDTH
-        font_size = 54
+        font_size = max(30, round(54 * scale))
+        min_font_size = max(18, round(28 * scale))
         font = _get_font(font_size)
-        while font_size >= 28:
+        while font_size >= min_font_size:
             font = _get_font(font_size)
-            tmp = Image.new("RGBA", (VW, 200), (0, 0, 0, 0))
+            tmp = Image.new("RGBA", (vw, max(200, round(200 * scale))), (0, 0, 0, 0))
             draw = ImageDraw.Draw(tmp)
             bbox = draw.textbbox((0, 0), text, font=font)
             tw = bbox[2] - bbox[0]
-            if tw <= MAX_TEXT_WIDTH:
+            if tw <= max_text_width:
                 break
             font_size -= 2
 
         bbox = draw.textbbox((0, 0), text, font=font)
         tw = bbox[2] - bbox[0]
         th = bbox[3] - bbox[1]
-        box_w = tw + PADDING_X * 2
-        box_h = th + PADDING_Y * 2
+        box_w = tw + padding_x * 2
+        box_h = th + padding_y * 2
 
-        cap_img = Image.new("RGBA", (VW, box_h + 20), (0, 0, 0, 0))
+        cap_img = Image.new("RGBA", (vw, box_h + max(12, round(20 * scale))), (0, 0, 0, 0))
         draw = ImageDraw.Draw(cap_img)
-        box_x = (VW - box_w) // 2
-        box_y = 10
+        box_x = (vw - box_w) // 2
+        box_y = max(6, round(10 * scale))
 
         draw.rounded_rectangle(
             [box_x, box_y, box_x + box_w, box_y + box_h],
-            radius=RADIUS,
+            radius=radius,
             fill=BG_COLOR,
         )
-        text_x = box_x + PADDING_X
-        text_y = box_y + PADDING_Y
+        text_x = box_x + padding_x
+        text_y = box_y + padding_y
         draw.text((text_x + 2, text_y + 2), text, font=font, fill=SHADOW_COLOR)
         draw.text((text_x, text_y), text, font=font, fill=TEXT_COLOR)
 
@@ -183,6 +193,9 @@ def render_captions(alignment: Dict, job_dir: Path) -> List[Dict]:
             "png": str(cap_path),
             "height": cap_img.height,
             "font_size": font_size,
+            "output_ratio": output_ratio,
+            "canvas_width": vw,
+            "canvas_height": vh,
         })
 
     # Save manifest

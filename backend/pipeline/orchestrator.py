@@ -58,6 +58,7 @@ class JobStatus:
     topic: str = ""
     format: str = ""
     length: str = ""
+    output_ratio: str = "9:16"
     client_id: str = "unified"   # multi-tenant: which client this job belongs to
     script: Optional[str] = None         # final script used (auto or custom)
     keyframe_url: Optional[str] = None   # URL of keyframe used in animation
@@ -66,6 +67,7 @@ class JobStatus:
     original_topic: Optional[str] = None
     original_format: Optional[str] = None
     original_length: Optional[str] = None
+    original_output_ratio: Optional[str] = None
     original_custom_script: Optional[str] = None
     original_keyframe_override: Optional[str] = None
     original_keyframe_description: Optional[str] = None
@@ -124,6 +126,7 @@ async def run_pipeline(
     custom_script: Optional[str] = None,
     keyframe_override: Optional[str] = None,
     keyframe_description: Optional[str] = None,
+    output_ratio: str = "9:16",
     client_id: str = "unified",
 ):
     """Run the full Unity video production pipeline asynchronously."""
@@ -136,10 +139,12 @@ async def run_pipeline(
         topic=topic,
         format=format,
         length=length,
+        output_ratio=output_ratio,
         client_id=client_id,
         original_topic=topic,
         original_format=format,
         original_length=length,
+        original_output_ratio=output_ratio,
         original_custom_script=custom_script,
         original_keyframe_override=keyframe_override,
         original_keyframe_description=keyframe_description,
@@ -205,7 +210,7 @@ async def run_pipeline(
         if keyframe_override:
             update_job(job_id, step=f"Using selected keyframe: {keyframe_override}", progress=28)
             keyframe_url = await asyncio.to_thread(
-                generate_keyframe, topic, format, job_dir, script, keyframe_override, client_id, ""
+                generate_keyframe, topic, format, job_dir, script, keyframe_override, client_id, "", output_ratio
             )
             kf_label = keyframe_override
             update_job(job_id, keyframe_url=keyframe_url, keyframe_label=kf_label)
@@ -218,7 +223,7 @@ async def run_pipeline(
                 attempt += 1
                 update_job(job_id, step=f"Generating new keyframe (attempt {attempt})...", progress=28)
                 keyframe_url = await asyncio.to_thread(
-                    generate_keyframe, topic, format, job_dir, script, "", client_id, current_description
+                    generate_keyframe, topic, format, job_dir, script, "", client_id, current_description, output_ratio
                 )
                 logger.info(f"[{job_id}] Generated keyframe URL: {keyframe_url}")
 
@@ -260,7 +265,7 @@ async def run_pipeline(
         else:
             update_job(job_id, step="Selecting keyframe from library", progress=28)
             # Pass the full script so GPT can pick the best visual match
-            keyframe_url = await asyncio.to_thread(generate_keyframe, topic, format, job_dir, script, "", client_id, "")
+            keyframe_url = await asyncio.to_thread(generate_keyframe, topic, format, job_dir, script, "", client_id, "", output_ratio)
             kf_label = "auto"
             update_job(job_id, keyframe_url=keyframe_url, keyframe_label=kf_label)
         logger.info(f"[{job_id}] Keyframe URL: {keyframe_url}")
@@ -277,13 +282,13 @@ async def run_pipeline(
 
         # ── Step 5: Captions ────────────────────────────────────────────────
         update_job(job_id, step="Rendering captions", progress=80)
-        caption_manifest = await asyncio.to_thread(render_captions, timestamps, job_dir)
+        caption_manifest = await asyncio.to_thread(render_captions, timestamps, job_dir, output_ratio)
         logger.info(f"[{job_id}] Captions: {len(caption_manifest)} lines")
 
         # ── Step 6: Assembly ────────────────────────────────────────────────
         update_job(job_id, step="Assembling final video (FFmpeg)", progress=90)
         final_path = OUTPUTS_DIR / f"{job_id}.mp4"
-        await asyncio.to_thread(assemble_video, raw_video_path, caption_manifest, final_path, comedy_cues, client_id)
+        await asyncio.to_thread(assemble_video, raw_video_path, caption_manifest, final_path, comedy_cues, client_id, output_ratio)
         logger.info(f"[{job_id}] Final: {final_path}")
 
         # ── Done ─────────────────────────────────────────────────────────────

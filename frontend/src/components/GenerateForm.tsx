@@ -29,6 +29,13 @@ const LENGTH_OPTIONS = [
   { value: '20s', desc: 'Full explanation' },
 ]
 
+const RATIO_OPTIONS = [
+  { value: '1:1', label: 'Square (1:1)', platform: 'Instagram · Facebook Feed', emoji: '◼️' },
+  { value: '4:5', label: 'Portrait (4:5)', platform: 'Instagram · Facebook Feed', emoji: '▣' },
+  { value: '9:16', label: 'Vertical (9:16)', platform: 'Stories · Reels · TikTok', emoji: '📱' },
+  { value: '16:9', label: 'Landscape (16:9)', platform: 'Facebook · YouTube', emoji: '🖥️' },
+]
+
 const TOPIC_SUGGESTIONS = [
   'doors', 'windows', 'roofing', 'siding', 'insulation',
   'gutters', 'energy efficiency', 'permits', 'warranties',
@@ -38,6 +45,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
   const [topic, setTopic]               = useState('')
   const [format, setFormat]             = useState('myth_or_fact')
   const [length, setLength]             = useState('15s')
+  const [outputRatio, setOutputRatio]   = useState('9:16')
   const [customScript, setCustomScript] = useState('')
   const [showCustomScript, setShowCustomScript] = useState(false)
 
@@ -252,6 +260,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
           length,
           custom_script: script.trim(),
           keyframe_override: selectedKeyframe || null,
+          output_ratio: outputRatio,
           client_id: 'unified',
         }),
       })
@@ -372,6 +381,32 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
               >
                 <span className="text-sm font-bold">{opt.value}</span>
                 <span className="text-xs text-gray-500 mt-0.5">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Output ratio */}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Size & Platform</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {RATIO_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setOutputRatio(opt.value)}
+                disabled={inputsLocked}
+                className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                  outputRatio === opt.value
+                    ? 'border-unified-gold bg-unified-gold/10 text-white'
+                    : 'border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600'
+                }`}
+              >
+                <span className="text-xl leading-none">{opt.emoji}</span>
+                <span>
+                  <span className="block text-sm font-semibold">{opt.label}</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">{opt.platform}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -629,7 +664,7 @@ export default function GenerateForm({ onJobStarted, preselectedKeyframe, onKeyf
               </button>
             </div>
             <button type="button" onClick={handleChangeInputs} disabled={loading} className="text-xs text-gray-400 hover:text-white transition-colors">
-              Change topic, format, length, or keyframe
+              Change topic, format, length, size, or keyframe
             </button>
           </div>
         )}

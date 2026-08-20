@@ -60,6 +60,7 @@ class GenerateRequest(BaseModel):
     custom_script: Optional[str] = None  # override auto-generated script
     keyframe_override: Optional[str] = None  # filename from library, e.g. "windows.png"; None = auto-select
     keyframe_description: Optional[str] = None  # describe a new scene to generate on-the-fly
+    output_ratio: str = "9:16"  # "1:1" | "4:5" | "9:16" | "16:9"
     client_id: str = "unified"  # multi-tenant: which client config to use
 
 
@@ -216,6 +217,7 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks):
         custom_script=req.custom_script,
         keyframe_override=req.keyframe_override,
         keyframe_description=req.keyframe_description,
+        output_ratio=req.output_ratio,
         client_id=req.client_id,
     )
     logger.info(f"Job {job_id} queued: {req.topic} / {req.format} / {req.length}")
@@ -276,6 +278,7 @@ def list_jobs(client_id: Optional[str] = None):
             "topic": j.topic,
             "format": j.format,
             "length": j.length,
+            "output_ratio": j.output_ratio,
             "client_id": j.client_id,
             "created_at": j.created_at,
             "video_url": j.video_url,
@@ -368,6 +371,7 @@ async def retry_job(job_id: str, background_tasks: BackgroundTasks):
         topic=job.original_topic or job.topic,
         format=job.original_format or job.format,
         length=job.original_length or job.length,
+        output_ratio=job.original_output_ratio or job.output_ratio,
         client_id=job.client_id,
     )
     background_tasks.add_task(
@@ -379,6 +383,7 @@ async def retry_job(job_id: str, background_tasks: BackgroundTasks):
         custom_script=job.original_custom_script,
         keyframe_override=job.original_keyframe_override,
         keyframe_description=job.original_keyframe_description,
+        output_ratio=job.original_output_ratio or job.output_ratio,
         client_id=job.client_id,
     )
     logger.info(f"Retry job {new_job_id} queued (original: {job_id})")
