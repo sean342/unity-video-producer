@@ -18,6 +18,7 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 VW, VH = 1072, 1920
 END_SCREEN_DURATION_SECONDS = 5
 UNIFIED_JINGLE_PATH = ASSETS_DIR / "unified_jingle.wav"
+VERTICAL_OUTRO_PATH = ASSETS_DIR / "unified_vertical_outro.mp4"
 
 
 def _get_logo_dimensions(logo_path: Path) -> tuple:
@@ -218,12 +219,43 @@ def _render_end_screen(output_path: Path, client_id: str, output_ratio: str = "9
     return output_path
 
 
+def _append_supplied_vertical_outro(body_video: Path, final_video: Path) -> Path:
+    """Normalize and append the supplied 9:16 Unified outro with its embedded jingle."""
+    job_dir = final_video.parent
+    normalized_outro = job_dir / "unified_vertical_outro.mp4"
+    make_clip = [
+        "ffmpeg", "-y", "-i", str(VERTICAL_OUTRO_PATH),
+        "-vf", "scale=1072:1920,format=yuv420p", "-r", "30",
+        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+        "-movflags", "+faststart", str(normalized_outro),
+    ]
+    result = subprocess.run(make_clip, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Vertical outro normalization failed:\n{result.stderr[-2000:]}")
+    concat_list = job_dir / "end_screen_concat.txt"
+    concat_list.write_text(
+        f"file '{body_video.resolve()}'\nfile '{normalized_outro.resolve()}'\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", "-movflags", "+faststart", str(final_video)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Vertical outro concatenation failed:\n{result.stderr[-2000:]}")
+    return final_video
+
+
 def _append_branded_end_screen(body_video: Path, final_video: Path, client_id: str, output_ratio: str = "9:16") -> Path:
-    """Create a five-second branded end screen with the Unified jingle, then concatenate it."""
+    """Append the supplied vertical outro or render the ratio-specific branded end screen."""
+    ratio = normalized_output_ratio(output_ratio)
+    if ratio == "9:16" and VERTICAL_OUTRO_PATH.exists():
+        return _append_supplied_vertical_outro(body_video, final_video)
     job_dir = final_video.parent
     frame_path = job_dir / "unified_end_screen.png"
     end_clip_path = job_dir / "unified_end_screen.mp4"
-    _render_end_screen(frame_path, client_id, output_ratio)
+    _render_end_screen(frame_path, client_id, ratio)
 
     if UNIFIED_JINGLE_PATH.exists():
         audio_input = ["-i", str(UNIFIED_JINGLE_PATH)]
