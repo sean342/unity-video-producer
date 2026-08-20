@@ -174,7 +174,7 @@ def _append_branded_end_screen(body_video: Path, final_video: Path, client_id: s
     # expensive full-video re-encode.
     concat_list = job_dir / "end_screen_concat.txt"
     concat_list.write_text(
-        f"file '{body_video.resolve()}'\\nfile '{end_clip_path.resolve()}'\\n",
+        f"file '{body_video.resolve()}'\nfile '{end_clip_path.resolve()}'\n",
         encoding="utf-8",
     )
     concat = [
