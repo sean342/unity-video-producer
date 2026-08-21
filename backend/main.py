@@ -24,12 +24,23 @@ from pipeline.client_config import get_client, list_clients, reload_clients
 from pipeline.script_writer import generate_script
 from pipeline._keyframe_registry import set_registry
 from credential_store import credential_statuses, get_credential, initialize_store, store_credential
+from media_library import (
+    clear_assignment,
+    delete_asset as delete_media_asset,
+    get_asset_path as get_media_asset_path,
+    initialize_media_library,
+    list_assets as list_media_assets,
+    list_assignments as list_media_assignments,
+    save_assignment as save_media_assignment,
+    save_upload as save_media_upload,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Unity Video Producer", version="1.0.0")
 initialize_store()
+initialize_media_library()
 
 # CORS — allow frontend dev server and production
 app.add_middleware(
@@ -101,6 +112,11 @@ class CredentialUpdateRequest(BaseModel):
     api_key: str
 
 
+class MediaAssignmentRequest(BaseModel):
+    scene_asset_id: str
+    audio_asset_id: Optional[str] = None
+
+
 SETTINGS_SESSION_COOKIE = "uvp_settings_session"
 SETTINGS_SESSIONS: dict[str, float] = {}
 SETTINGS_SESSION_TTL_SECONDS = 8 * 60 * 60
@@ -160,6 +176,64 @@ def update_credential_setting(provider: str, req: CredentialUpdateRequest, reque
     if not saved:
         raise HTTPException(status_code=422, detail=message)
     return {"status": "saved", "label": provider, "message": message}
+
+
+@app.get("/settings/media/assets")
+def list_settings_media_assets(request: Request):
+    _require_settings_session(request)
+    return list_media_assets()
+
+
+@app.post("/settings/media/assets")
+async def upload_settings_media_asset(request: Request, file: UploadFile = File(...)):
+    _require_settings_session(request)
+    try:
+        asset = save_media_upload(file.filename or "upload", file.content_type or "", await file.read())
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    return asset
+
+
+@app.get("/settings/media/files/{asset_id}")
+def serve_settings_media_asset(asset_id: str, request: Request):
+    _require_settings_session(request)
+    path = get_media_asset_path(asset_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+    return FileResponse(path)
+
+
+@app.delete("/settings/media/assets/{asset_id}")
+def delete_settings_media_asset(asset_id: str, request: Request):
+    _require_settings_session(request)
+    if not delete_media_asset(asset_id):
+        raise HTTPException(status_code=404, detail="Media asset not found")
+    return {"status": "deleted"}
+
+
+@app.get("/settings/media/assignments")
+def list_settings_media_assignments(request: Request):
+    _require_settings_session(request)
+    return list_media_assignments()
+
+
+@app.put("/settings/media/assignments/{slot}/{output_ratio}")
+def update_settings_media_assignment(slot: str, output_ratio: str, req: MediaAssignmentRequest, request: Request):
+    _require_settings_session(request)
+    try:
+        return save_media_assignment(slot, output_ratio, req.scene_asset_id, req.audio_asset_id)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
+@app.delete("/settings/media/assignments/{slot}/{output_ratio}")
+def clear_settings_media_assignment(slot: str, output_ratio: str, request: Request):
+    _require_settings_session(request)
+    try:
+        clear_assignment(slot, output_ratio)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    return {"status": "cleared"}
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────

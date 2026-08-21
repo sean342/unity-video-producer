@@ -15,6 +15,7 @@ backend/.env
 backend/assets/keyframes/temp_*.png
 backend/assets/graphic_uploads/
 backend/assets/social_media/
+backend/assets/media_library/
 backend/outputs/
 # Encrypted credential database and local operational restore points
 backend/data/

@@ -12,13 +12,13 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .client_config import get_asset_path
 from .video_formats import get_video_format, normalized_output_ratio
+from media_library import get_assignment, get_asset_path as get_library_asset_path
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 
 VW, VH = 1072, 1920
 END_SCREEN_DURATION_SECONDS = 5
 UNIFIED_JINGLE_PATH = ASSETS_DIR / "unified_jingle.wav"
-VERTICAL_OUTRO_PATH = ASSETS_DIR / "unified_vertical_outro.mp4"
 
 
 def _get_logo_dimensions(logo_path: Path) -> tuple:
@@ -219,88 +219,118 @@ def _render_end_screen(output_path: Path, client_id: str, output_ratio: str = "9
     return output_path
 
 
-def _append_supplied_vertical_outro(body_video: Path, final_video: Path) -> Path:
-    """Normalize and append the supplied 9:16 Unified outro with its embedded jingle."""
-    job_dir = final_video.parent
-    normalized_outro = job_dir / "unified_vertical_outro.mp4"
-    make_clip = [
-        "ffmpeg", "-y", "-i", str(VERTICAL_OUTRO_PATH),
-        "-vf", "scale=1072:1920,format=yuv420p", "-r", "30",
-        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-movflags", "+faststart", str(normalized_outro),
-    ]
-    result = subprocess.run(make_clip, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Vertical outro normalization failed:\n{result.stderr[-2000:]}")
-    concat_list = job_dir / "end_screen_concat.txt"
-    concat_list.write_text(
-        f"file '{body_video.resolve()}'\nfile '{normalized_outro.resolve()}'\n",
-        encoding="utf-8",
-    )
+def _concat_clips(clips: List[Path], output_path: Path, manifest_name: str) -> Path:
+    manifest = output_path.parent / manifest_name
+    manifest.write_text("".join(f"file '{clip.resolve()}'\n" for clip in clips), encoding="utf-8")
     result = subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", "-movflags", "+faststart", str(final_video)],
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(manifest), "-c", "copy", "-movflags", "+faststart", str(output_path)],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Vertical outro concatenation failed:\n{result.stderr[-2000:]}")
-    return final_video
+        raise RuntimeError(f"Scene concatenation failed:\n{result.stderr[-2000:]}")
+    return output_path
+
+
+def _render_media_scene(assignment: dict, output_path: Path, output_ratio: str) -> Path:
+    """Normalize a configured uploaded image or video scene into a concat-compatible MP4."""
+    scene = assignment["scene"]
+    scene_path = get_library_asset_path(scene["id"])
+    if not scene_path:
+        raise RuntimeError("Configured media scene is unavailable")
+    audio = assignment.get("audio")
+    audio_path = get_library_asset_path(audio["id"]) if audio else None
+    ratio = normalized_output_ratio(output_ratio)
+    preset = get_video_format(ratio)
+    width, height = int(preset["width"]), int(preset["height"])
+    scene_duration = _get_media_duration_seconds(scene_path)
+    if scene["media_type"] == "image":
+        duration = _get_media_duration_seconds(audio_path) if audio_path else END_SCREEN_DURATION_SECONDS
+        duration = duration if duration > 0 else END_SCREEN_DURATION_SECONDS
+        inputs = ["-loop", "1", "-i", str(scene_path)]
+        if audio_path:
+            inputs += ["-i", str(audio_path)]
+            audio_filter = f"[1:a]apad,atrim=duration={duration:.3f}[a]"
+        else:
+            inputs += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            audio_filter = f"[1:a]atrim=duration={duration:.3f}[a]"
+    else:
+        duration = scene_duration if scene_duration > 0 else END_SCREEN_DURATION_SECONDS
+        inputs = ["-i", str(scene_path)]
+        if audio_path:
+            inputs += ["-i", str(audio_path)]
+            audio_filter = f"[1:a]apad,atrim=duration={duration:.3f}[a]"
+        elif scene.get("has_audio"):
+            audio_filter = f"[0:a]apad,atrim=duration={duration:.3f}[a]"
+        else:
+            inputs += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+            audio_filter = f"[1:a]atrim=duration={duration:.3f}[a]"
+    vf = f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=0x0e1422,format=yuv420p[v]"
+    command = [
+        "ffmpeg", "-y", *inputs, "-filter_complex", f"{vf};{audio_filter}",
+        "-map", "[v]", "-map", "[a]", "-t", f"{duration:.3f}", "-r", "30",
+        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(output_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Configured media render failed:\n{result.stderr[-2000:]}")
+    return output_path
 
 
 def _append_branded_end_screen(body_video: Path, final_video: Path, client_id: str, output_ratio: str = "9:16") -> Path:
-    """Append the supplied vertical outro or render the ratio-specific branded end screen."""
+    """Render the default ratio-specific CTA card and append it after the video body."""
     ratio = normalized_output_ratio(output_ratio)
-    if ratio == "9:16" and VERTICAL_OUTRO_PATH.exists():
-        return _append_supplied_vertical_outro(body_video, final_video)
     job_dir = final_video.parent
     frame_path = job_dir / "unified_end_screen.png"
     end_clip_path = job_dir / "unified_end_screen.mp4"
     _render_end_screen(frame_path, client_id, ratio)
-
     if UNIFIED_JINGLE_PATH.exists():
         audio_input = ["-i", str(UNIFIED_JINGLE_PATH)]
-        # The supplied 4.694-second jingle plays immediately, fades gracefully at
-        # the close, and pads to the exact five-second end-screen duration.
         audio_filter = "aformat=channel_layouts=stereo,apad=pad_dur=5,atrim=duration=5,afade=t=out:st=4.20:d=0.45"
     else:
         print(f"[assembler] Warning: end-screen jingle missing at {UNIFIED_JINGLE_PATH}; using silence")
         audio_input = ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
         audio_filter = "atrim=duration=5"
-
     make_clip = [
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", str(frame_path),
-        *audio_input,
+        "ffmpeg", "-y", "-loop", "1", "-i", str(frame_path), *audio_input,
         "-t", str(END_SCREEN_DURATION_SECONDS),
-        "-vf", f"scale={get_video_format(normalized_output_ratio(output_ratio))['width']}:{get_video_format(normalized_output_ratio(output_ratio))['height']},format=yuv420p",
-        "-af", audio_filter,
-        "-r", "30",
+        "-vf", f"scale={get_video_format(ratio)['width']}:{get_video_format(ratio)['height']},format=yuv420p",
+        "-af", audio_filter, "-r", "30",
         "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-shortest", "-movflags", "+faststart",
-        str(end_clip_path),
+        "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(end_clip_path),
     ]
     result = subprocess.run(make_clip, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"End-screen render failed:\n{result.stderr[-2000:]}")
+    return _concat_clips([body_video, end_clip_path], final_video, "end_screen_concat.txt")
 
-    # Both clips are normalized to the application's native 1072x1920, 30 fps,
-    # H.264/AAC format. The concat demuxer therefore joins them without a second,
-    # expensive full-video re-encode.
-    concat_list = job_dir / "end_screen_concat.txt"
-    concat_list.write_text(
-        f"file '{body_video.resolve()}'\nfile '{end_clip_path.resolve()}'\n",
-        encoding="utf-8",
-    )
-    concat = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(concat_list),
-        "-c", "copy", "-movflags", "+faststart",
-        str(final_video),
-    ]
-    result = subprocess.run(concat, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"End-screen concatenation failed:\n{result.stderr[-2000:]}")
+
+def _apply_configured_bookends(body_video: Path, final_video: Path, client_id: str, output_ratio: str) -> Path:
+    """Apply optional user-assigned intro/outro scenes, falling back to the default branded ending."""
+    ratio = normalized_output_ratio(output_ratio)
+    working_body = body_video
+    generated_files: List[Path] = []
+    intro = get_assignment("intro", ratio)
+    outro = get_assignment("outro", ratio)
+    try:
+        if intro:
+            intro_clip = final_video.parent / f"configured_intro_{ratio.replace(':', 'x')}.mp4"
+            _render_media_scene(intro, intro_clip, ratio)
+            generated_files.append(intro_clip)
+            with_intro = final_video.parent / f"{final_video.stem}_with_intro.mp4"
+            _concat_clips([intro_clip, working_body], with_intro, "intro_concat.txt")
+            generated_files.append(with_intro)
+            working_body = with_intro
+        if outro:
+            outro_clip = final_video.parent / f"configured_outro_{ratio.replace(':', 'x')}.mp4"
+            _render_media_scene(outro, outro_clip, ratio)
+            generated_files.append(outro_clip)
+            _concat_clips([working_body, outro_clip], final_video, "outro_concat.txt")
+        else:
+            _append_branded_end_screen(working_body, final_video, client_id, ratio)
+    finally:
+        for path in generated_files:
+            path.unlink(missing_ok=True)
     return final_video
 
 
@@ -417,10 +447,10 @@ def assemble_video(
         raise RuntimeError(f"FFmpeg body assembly failed:\n{result.stderr[-2000:]}")
 
     try:
-        _append_branded_end_screen(body_video, output_path, client_id, ratio)
+        _apply_configured_bookends(body_video, output_path, client_id, ratio)
     except Exception as error:
-        # Do not discard an otherwise completed video if the deterministic CTA render hits an OS-level failure.
-        print(f"[assembler] Warning: branded end screen failed; preserving body video: {error}")
+        # Do not discard an otherwise completed video if a deterministic intro or outro render hits an OS-level failure.
+        print(f"[assembler] Warning: configured bookend render failed; preserving body video: {error}")
         shutil.move(str(body_video), str(output_path))
     else:
         body_video.unlink(missing_ok=True)
